@@ -3,10 +3,9 @@ library(readxl)
 library(genbankr)
 library(Biostrings)
 library(rhmmer)
-source('/Volumes/Macintosh HD/Users/nicofernandez/Rscripts/Rhmmer_source.R')
-source('/Volumes/Macintosh HD/Users/nicofernandez/Rscripts/std.theme.R')
 
 
+# Neighrborhood Defense Score ---------------------------------------------
 neighborhood_defense_function <-
   function(neighborhood.file,
            upstream.window.size,
@@ -14,7 +13,7 @@ neighborhood_defense_function <-
            output.loc) {
     defense_pfams <-
       read_xlsx(
-        '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Defense_Pfams.xlsx'
+        ##path to Supplemental Table S4
       ) %>%
       select(Family, 'Annotation' = 'Annotation / Comments', 'System' = 'Defense system type') %>%
       filter(!str_detect(Family, 'COG')) %>%
@@ -103,25 +102,31 @@ neighborhood_defense_function <-
       mutate(Type = 'Observed') %>%
       write_csv(paste0(output.loc, 'DnmA_Neighborhood_DS.csv'))
   }
-
 #neighborhood file <- path to excel sheet from SSN output
-neighborhood.file <-
-  '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Coincidence_input/Finished/Misc/DnmA_neighbors.csv'
+neighborhood.file #<-
+ ##path to Supplemental Table S5 (convert to CSV format first)
 
 #window sizes = number (interger) of genes upstream and downstream of target
-upstream.window.size <- 10
-downstream.window.size <- 10
+upstream.window.size #<- ##number of genes upstream
+downstream.window.size #<- ##number of genes downstream
 
 ##output.loc = output filepath
-output.loc <-
-  '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Coincidence_output/02102022/'
-
+output.loc #<-
+  ##filepath to output directory
+  
+##run function with given inputs 
 neighborhood_defense_function(neighborhood.file,
                               upstream.window.size,
                               downstream.window.size,
                               output.loc)
 
-##Random Genomic Island Generations
+
+
+##Extract FASTA nucleotide sequences using sample of accession numbers from the neighborhood files ("Bs_Acc_Num.txt")
+##Annotate FASTA nucleotide sequences using prokka (https://github.com/tseemann/prokka)
+
+# Samlpe Neighborhood Generation ------------------------------------------
+
 sample_neighborhoods_function <-
   function(genbank.filepath, output.loc) {
     ##read in genbank filepaths from Prokka annotated genomes
@@ -173,11 +178,19 @@ sample_neighborhoods_function <-
                     paste0(output.loc, 'Sample_Neighborhoods_Seq.fa'))
   }
 
-genbank.filepath <-
-  '/Volumes/Macintosh HD/Users/nicofernandez/Documents/Genbanks_DnmA_Sample/prokka_files'
+genbank.filepath #<-
+  ##path to prokka files for sample genomes
 output.loc <-
-  '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Coincidence_output/02102022/'
+  ##filepath to output directory
 sample_neighborhoods_function(genbank.filepath, output.loc)
+
+
+
+
+##Run amino acid sequences of all proteins in sample genome neighborhoods through hmmscan (hmmer package) using pfam-A database (http://pfam.xfam.org)
+
+
+# Compiling DnmA and Random Neighborhood Scores ---------------------------
 
 parse_hmmscan_function <-
   function(hmmer.output,
@@ -247,133 +260,28 @@ parse_hmmscan_function <-
         perc = score / size
       ) %>% filter(size == 21) %>% bind_rows(sample.data)
     
-    ggplot(pooled_data, aes(score, group = Type)) +
-      geom_histogram(
-        aes(
-          y = (..count..) / sum(..count..),
-          fill = Type,
-          group = Type
-        ),
-        binwidth = 1,
-        color = 'black',
-        position = position_dodge(1)
-      ) +
-      scale_x_continuous(breaks = seq(0, 9, 1)) +
-      scale_y_continuous(expand = c(0, 0)) +
-      std.theme()
-    # geom_bar(aes(y = (..count..)/sum(..count..), fill = Type), position = position_dodge(0.8))
+    write_csv(pooled_data, paste0(output.loc,'DnmA_Random_Defense_Score.csv'))
     
-    write_csv(pooled_data, paste0(output.loc, 'Defense_Scores_DnmA.csv'))
+    top_5_pfam <- dnmA_neighborhood_genbank %>%
+      group_by(desc) %>%
+      filter(Defense_System == 1) %>%
+      dplyr::summarize(freq = n()) %>%
+      arrange(desc(freq)) %>%
+      mutate(perc = freq / sum(freq)) %>%
+      dplyr::slice(1:5)
     
-    summary_by_type <- pooled_data %>%
-      group_by(Type, score) %>%
-      dplyr::summarize(count = n()) %>%
-      group_by(Type) %>%
-      mutate(Perc = count / sum(count))
-    
-    dnmA_neighborhood_plot <- ggplot(summary_by_type, aes(score, Perc)) +
-      geom_col(
-        aes(fill = Type),
-        alpha = 0.5,
-        position = position_dodge(.9, preserve = 'single'),
-        color = 'black'
-      ) +
-      scale_y_continuous(
-        expand = c(0, 0),
-        limits = c(0, .61),
-        breaks = seq(0, .6, .1),
-        name = 'Portion of Neighborhoods'
-      ) +
-      scale_x_continuous(name = '# of Defense Associated Protein \n Families in Neighborhood') +
-      # scale_fill_manual(values = c('grey77','grey22'))+
-      scale_fill_discrete(
-        name = "Data Type",
-        labels = c("Random", 'DnmA'),
-        type = c('grey77', 'grey22')
-      ) +
-      std.theme()
-    
-    ggsave(filename = 'DnmA_Neighborhood_Plot.jpeg',
-           plot = dnmA_neighborhood_plot,device = 'jpeg',
-           path =  output.loc,
-           height = 10 * 1.618, 
-           width = 14,
-           units = 'cm',dpi = 'retina')
+    write_csv(top_5_pfam, paste0(output.loc,'DnmA_Top5_Adjacent_PFAM.csv'))
   }
 
-hmmer.output <-
-  '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Coincidence_output/02102022/DnmA_Sample_HMMout.txt'
+hmmer.output #<-
+  ##path to --tblout hmmscan output file
 aa.seqs <-
-  '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Coincidence_output/02102022/Sample_Neighborhoods_Seq.fa'
+  ##path to 'Sample_Neighborhoods_Seq.fa' (will be located in output.loc)
 random.neighborhood.genbank <-
-  '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Coincidence_output/02102022/DnmA_Sampled_Neighborhoods.csv'
+  ##path to 'DnmA_Sampled_Neighborhoods.csv' (will be located in output.loc)
 dnmA.neighborhood.genbank <-
-  '/Volumes/GoogleDrive/My Drive/Simmons - Bioinformatics/Coincidence/Coincidence_output/02102022/DnmA_Neighborhood_DS.csv'
+  ##path to ''DnmA_Neighborhood_DS.csv' (will be located in output.loc)
+output.loc #<- 
+  ##filepath to output directory
 
-##top_5
-top_5_pfam <- dnmA_neighborhood_genbank %>%
-  group_by(desc) %>%
-  filter(Defense_System == 1) %>%
-  dplyr::summarize(freq = n()) %>%
-  arrange(desc(freq)) %>%
-  mutate(perc = freq / sum(freq)) %>%
-  dplyr::slice(1:5)
 
-top_5_pfam_plot <- dnmA_neighborhood_genbank %>%
-  dplyr::filter(n() >= 10) %>%
-  mutate(rel.diff = as.integer(rel.diff)) %>%
-  mutate(position = case_when(rel.diff < 0 ~ 'Upstream',
-                              rel.diff > 0 ~ 'Downstream')) %>%
-  dplyr::ungroup() %>%
-  dplyr::filter(!is.na(rel.diff)) %>%
-  group_by(Acc_Num, position) %>%
-  mutate(rel.pos = case_when(
-    position == 'Upstream' ~ -1 * rev(1:n()),
-    position == 'Downstream' ~ 1 * 1:n()
-  )) %>%
-  filter(Defense_System == 1) %>%
-  mutate(direction = case_when(
-    direction == 'complement' ~ 'Reverse',
-    direction == 'normal' ~ 'Forward'
-  )) %>%
-  mutate(rel.pos = case_when(
-    direction == 'Reverse' ~ rel.pos / -1,
-    direction == 'Forward' ~ rel.pos / 1
-  )) %>%
-  group_by(desc) %>%
-  mutate(freq = n()) %>%
-  # dplyr::filter(dense_rank(plyr::desc(freq)) %in% 1:5) %>%
-  mutate(desc_reordered = factor(desc, levels = unique(top_5_pfam$desc))) %>%
-  dplyr::select(-gene_key,-accession,-sort_key,-System) %>%
-  drop_na() %>%
-  pivot_longer(cols = rel.pos,
-               names_to = 'Data_Type',
-               values_to = 'Position') %>%
-  group_by(desc_reordered, Data_Type) %>%
-  dplyr::count(Position) %>%
-  mutate(perc = n / sum(n)) %>%
-  dplyr::ungroup() %>% distinct()
-
-top_5_pfam_plot %>% view()
-
-ggplot(top_5_pfam_plot, aes(Position, perc)) +
-  # geom_area(aes(fill = Data_Type), position = 'identity')+
-  geom_bar(
-    fill = 'black',
-    color = 'black',
-    stat = 'identity',
-    position = 'identity'
-  ) +
-  # geom_density_ridges(stat = "binline", bins = 20, scale = 0.95, draw_baseline = FALSE, aes(fill = desc))+
-  facet_grid(desc_reordered ~ ., drop = TRUE) + std.theme() + scale_x_continuous(
-    expand = c(0, 0),
-    limit = c(-5.5, 9.5),
-    breaks = seq(-5, 9, 1)
-  ) + scale_y_continuous(
-    name = 'Proportion',
-    expand = c(0, 0),
-    breaks = seq(0, .8, .2),
-    limits = c(0, 0.85)
-  ) +
-  theme(strip.text = element_blank())
-  
